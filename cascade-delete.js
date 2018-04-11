@@ -8,7 +8,7 @@ module.exports = function (Model, options) {
     Model.observe('after delete', function (ctx, next) {
         var name = idName(Model);
         var hasInstanceId = ctx.instance && ctx.instance[name];
-        var hasWhereId = ctx.where && ctx.where[name];
+        var hasWhereId = (ctx.where && ctx.where[name]) || (ctx.where && ctx.where.and && ctx.where.and[0].id);
         var hasMixinOption = options && _.isArray(options.relations);
 
         if (!(hasWhereId || hasInstanceId)) {
@@ -58,8 +58,21 @@ module.exports = function (Model, options) {
                 var where = {};
                 where[relationKey] = modelId;
 
-                return relationModel.destroyAll(where);
-            }
+                if (options.deepDelete) {
+                  let relationModelIdName = relationModel.getIdName();
+                  let fields = {};
+                  fields[relationModelIdName] = true;
+                  return relationModel.find({where: where, fields: fields}).then(function (instancesToDelete) {
+                    let deleteOperations = [];
+                    for (let instance of instancesToDelete) {
+                      deleteOperations.push(relationModel.deleteById(instance[relationModelIdName]));
+                    }
+                    return Promise.all(deleteOperations);
+                  });
+                } else {
+                  return relationModel.destroyAll(where);
+                }
+            };
         });
     }
 
@@ -68,6 +81,6 @@ module.exports = function (Model, options) {
     }
 
     function getIdValue(m, data) {
-        return data && data[idName(m)];
+        return data && (data[idName(m)] || data.and[0][idName(m)]);
     }
 };
